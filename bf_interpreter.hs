@@ -10,20 +10,13 @@ import System.IO (readFile)
 import Control.Exception (catch)
 import System.Environment (getArgs)
 
-
-getInput script = do if ',' `elem` script
-                        then do putStrLn "provide input:"
-                                result <- getLine
-                                return result
-                        else return ""
-
 {- exeMain : Executable Entry Point                                           -}
 exeMain = do args <- getArgs
              case args of
                   [name] -> do
                       catch (do script <- readFile name
-                                stdin <- getInput script
-                                putStrLn $ getText $ runIOProgram script stdin)
+                                runIOProgram script
+                                return () )
                             ((\_ -> putStrLn "could not read file")
                                 :: IOError -> IO ())
                   _      -> putStrLn "no script specified"
