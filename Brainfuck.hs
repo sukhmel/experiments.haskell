@@ -32,12 +32,12 @@
 --------------------------------------------------------------------------------
 
 module Brainfuck (
-    getText                       -- get stdout contents
-    ,brainfuck      ,brainfuckIO  -- 
-    ,state                        -- default constructors
-    ,runIOBrainfuck ,runIOProgram -- \
-    ,runBrainfuck   ,runProgram   -- | execution wrappers for convenience
-    ,runEmbedded    ,run          -- /
+    getText, getProgram             -- get stdout / program contents
+    , state, brainfuck, brainfuckIn -- default constructors
+    , runIOBrainfuck,   runBrainfuck -- \
+    , runIOEmbedded,    runEmbedded  -- | execution wrappers for convenience
+    , runIOProgram,     runProgram   -- |
+    , run                            -- /
 ) where
 
 import Data.Char (ord, chr)
@@ -45,24 +45,38 @@ import Data.Char (ord, chr)
 {- default constructor -- everything is empty                                 -}
 state = State [0,0..] 0 0 0 False "" "" ""
 
-
 {- run program with predefined input inside of a present instance of State    -}
-runIOBrainfuck p io s = runEmbedded $ s {program = p, stdin = io}
+runBrainfuck p io s = runEmbedded $ s {program = p, stdin = io}
 
-{- run program inside of a present instance of State                          -}
-runBrainfuck p s      = runIOBrainfuck p "" s 
+{- run program inside of a present instance of State, interactively           -}
+runIOBrainfuck p s      = runIOEmbedded $ s {program = p} 
 
-{- run program that is embedded into present instance of State                -}
-runEmbedded s = let s' = stepProg s in
-                if done s' then s'
-                           else runEmbedded s'
+{- run program that is embedded into State with predefined stdin              -}
+runEmbedded s = let (s', i) = stepProg s 
+                    s''     = case i of 
+                                   Read -> continue (s' {stdin = cs}) (Just c)
+                                   _    -> continue s' Nothing
+                    (c:cs)  = stdin s'
+                in if done s'' then s''
+                               else runEmbedded s''
+
+{- run program that is embedded into present instance of State, interactively -}
+runIOEmbedded s = let (s', i) = stepProg s in
+                  case i of
+                       Write c -> do putChar c
+                                     runIOEmbedded s'
+                       Read    -> do c <- getChar
+                                     runIOEmbedded $ continue s' (Just c)
+                       None    -> if done s' then return s'
+                                             else do runIOEmbedded s'
 
 {- run program with predefined input inside of a default State                -}
-runIOProgram p input = runIOBrainfuck p input state
+runProgram p input = runBrainfuck p input state
 
-{- run program inside of a default State                                      -}
-runProgram p = runIOBrainfuck p "" state
-run          = runProgram       -- alias
+{- run program inside of a default State, interactively                       -}
+runIOProgram p = runIOBrainfuck p state
+run            = runIOProgram       -- alias
+
 {- Emulator state                                                             -}
 data State =
     State {memory   :: [Int],
@@ -74,24 +88,41 @@ data State =
            stdin,
            stdout   :: [Char]}
 
+{- interrupts as tools of interacting with user                               -}
+data Interrupt = None | Read | Write Char
+
+{- function to continue execution after interrupt (including None)            -}
+continue            :: State -> Maybe Char -> State
+continue s (Just i) = s' where
+                           p  = program  s 
+                           c  = carriage s
+                           s' = case p !! c of
+                                     ',' -> incCar $ setCMem i s
+                                     _   -> s
+continue s Nothing  = s 
+
 {- getter for stdout of Brainfuck-machine                                     -}
 getText   :: State -> [Char]
 getText s = stdout s
 
+{- getter for program in Brainfuck-machine                                    -}
+getProgram   :: State -> [Char]
+getProgram s =  program s
+
 showsState (State mem pos car max done prog sin sout) dest =
-    memory ++ "\n"
+    memory ++ delimiter
     ++ condition 
-    ++ debug ++ "\n" 
-    ++ "IN: \""  ++ sin  ++ "\"\n"
-    ++ "OUT: \"" ++ sout ++ "\""
+    ++ debug ++ delimiter
+    ++ "IN: \""  ++ sin  ++ "\"" ++ delimiter
+    ++ "OUT: \"" ++ sout ++ "\"" ++ delimiter
     ++ dest
     where
-        debug     | done = prog ++ "_"
-                  | True = x ++ '_':y:'_':ys
+        debug     | done      = prog ++ "_"
+                  | otherwise = x ++ '_':y:'_':ys
                 where (x, y:ys) = splitAt car prog
                  
-        condition | done = " completed.\n"
-                  | True = " running...\n"
+        condition | done      = " completed." ++ delimiter
+                  | otherwise = " running..." ++ delimiter
           
         memory = init (show l) ++ left ++ show r ++ right ++ tail (show rs) 
                 where (l, r:rs) = splitAt pos (take (max+1) mem)
@@ -101,6 +132,7 @@ showsState (State mem pos car max done prog sin sout) dest =
                       right = case length rs of
                                    0 -> "_"
                                    _ -> "_, "
+        delimiter        = " "
 
 instance Show State where
     showsPrec _ a = showsState a
@@ -108,10 +140,10 @@ instance Show State where
 
 
 {- constructor that takes program text and stdin text                         -}
-brainfuckIO prog input = state {program = prog, stdin = input}
+brainfuckIn prog input = state {program = prog, stdin = input}
 
 {- constructor that takes only program text                                   -}
-brainfuck prog         = brainfuckIO prog "" 
+brainfuck prog         = brainfuckIn prog "" 
 
 {- upper level functions to treat changes in memory, and execution            -}
 changeMemory, changePosition, changeCarriage :: (Int -> Int) -> State -> State
@@ -189,7 +221,7 @@ setCMem  :: Char -> State -> State
 setCMem  = setMem . ord  
 
 {- make one step of interpreter                                               -}
-stepProg s = {-return-} s' where -- (s', r)
+stepProg s = (s', i) where
                  p  = program  s 
                  c  = carriage s
                  s' = if done s then s
@@ -206,7 +238,11 @@ stepProg s = {-return-} s' where -- (s', r)
                                   '-' -> incCar $ decMem s
                                   '+' -> incCar $ incMem s
                                   '.' -> incCar $ s {stdout = o ++ [getCMem s]}
-                                  ',' -> incCar $ setCMem x $ s {stdin = xs}
+                                  ',' -> s
                                   _   -> incCar s
                                 where (x:xs) = stdin s
                                       o      = stdout s
+                 i  = case p !! c of -- interrupt
+                           ',' -> Read
+                           '.' -> Write $ getCMem s
+                           _   -> None
