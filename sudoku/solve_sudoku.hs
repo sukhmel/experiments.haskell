@@ -9,6 +9,9 @@ import Control.Exception (catch)
 import Control.Applicative((<$>),(<*>))
 import System.Environment (getArgs)
 
+cook = foldr (\x a -> replace x : a) []
+   where replace x = if isDigit x || isSpace x then x else ' ' 
+
 parseTask :: FilePath -> IO [[Int]]
 parseTask name = fmap 
                       ( map 
@@ -18,25 +21,21 @@ parseTask name = fmap
                                           <$> all isDigit
                                           <*> not . null
                                           )
+                                . words
                             )
-                       . map words
                        . filter (not . null) 
                        . lines
-                       . filter (
-                                 (||) 
-                                 <$> isDigit
-                                 <*> isSpace
-                                )
+                       . cook
                        )
                       $ readFile name
 
 main = do args <- getArgs
           case args of
-               [name] -> do catch (do task <- parseTask name
-                                      printSudoku 
-                                                  $ getSolution
-                                                  $ getTask task
-                                      return () )
-                                  ((\_ -> putStrLn "could not read file")
-                                      :: IOError -> IO ())
+               [name] -> catch (do task <- parseTask name
+                                   printSudoku 
+                                               $ getSolution
+                                               $ getTask task
+                                   return () )
+                               ((\_ -> putStrLn "could not read file")
+                                   :: IOError -> IO ())
                _      -> putStrLn "no task specified"
