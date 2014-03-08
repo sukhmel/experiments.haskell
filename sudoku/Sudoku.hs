@@ -6,6 +6,7 @@ import Control.Applicative
 
 -- size of smaller part of puzzle
 partSize = 3
+utf      = False
 
 -- make puzzle out of array of values
 getTask task = updateValues sudoku $ makeCells task
@@ -13,19 +14,19 @@ getTask task = updateValues sudoku $ makeCells task
 -- unused: get all combinations where one element is taken from each input list 
 permutation :: (Eq a) => [[a]] -> [[a]]
 permutation [] = [[]]
-permutation (x:xs) = [ (a:b) | a <- x, b <- permutation xs, not $ elem a b ]
+permutation (x:xs) = [ a : b | a <- x, b <- permutation xs, a `notElem` b ]
 
 -- Suppose allright x y, and check if it is possible to create combination of 
 -- elements from y (one element from each list) containing all elements from x.
 allright :: (Eq a) => [a] -> [[a]] -> Bool
 allright [] _     = True
 allright _ []     = False
-allright (x:xs) y = or $ map (allright xs) (branch x y)
+allright (x:xs) y = any (allright xs) (branch x y)
 
 -- Create list of possible continuations
 branch :: (Eq a) => a -> [[a]] -> [[[a]]]
 branch x ys = [ filter (not . null) $ c ++ rest | c <- containing ]
-          where rest       = filter (not . elem x) ys
+          where rest       = filter (notElem x) ys
                 containing = exclusiveSplit . map clean . filter (elem x) $ ys
                 clean      = filter (/= x)
 
@@ -95,16 +96,18 @@ showSudoku s = [concat [v (get s $ real x y) x y | x<- indices] | y <- indices]
 
                  border decision@(vert, horiz, left, right, top, bottom) =
                           case decision of
-                               (True, False, _, _, _, _)      -> " | " -- " │ "
-                               (True, True, True, _, True, _) -> " +-" -- " ┌─"
-                               (True, True, True, _, _, True) -> " +-" -- " └─"
-                               (True, True, _, True, True, _) -> "-+ " -- "─┐ "
-                               (True, True, _, True, _, True) -> "-+ " -- "─┘ "
-                               (True, True, _, _, _, True)    -> "-+-" -- "─┴─"
-                               (True, True, _, _, True, _)    -> "-+-" -- "─┬─"
-                               (True, True, True, _, _, _)    -> " +-" -- " ├─"
-                               (True, True, _, True, _, _)    -> "-+ " -- "─┤ "
-                               (_, True, _, _, _, _)          -> "---" -- "───"
+                               (True, False, _, _, _, _)      -> " | " /-> " │ "
+                               (True, True, True, _, True, _) -> " +-" /-> " ┌─"
+                               (True, True, True, _, _, True) -> " +-" /-> " └─"
+                               (True, True, _, True, True, _) -> "-+ " /-> "─┐ "
+                               (True, True, _, True, _, True) -> "-+ " /-> "─┘ "
+                               (True, True, _, _, _, True)    -> "-+-" /-> "─┴─"
+                               (True, True, _, _, True, _)    -> "-+-" /-> "─┬─"
+                               (True, True, True, _, _, _)    -> " +-" /-> " ├─"
+                               (True, True, _, True, _, _)    -> "-+ " /-> "─┤ "
+                               (True, True, _, _, _, _)       -> "-+-" /-> "─┼─"
+                               (_, True, _, _, _, _)          -> "---" /-> "───"
+                 a /-> b      = if not utf then a else b
                  get s (x, y) = filter 
                                 ((&&) <$> (x ==) . column <*> (y ==) . row) s
 
@@ -113,15 +116,15 @@ updateCell :: [Cell Int] -> Cell Int -> Cell Int
 updateCell list cell@(Cell v x y) = Cell v' x y
         where v' = if length v < 2 then filter (not . same) v
                                    else filter correct v
-              correct  c = and $ map (good c) [row, column, part]
-              same c = c `elem` (concat . concat . map chosen
+              correct  c = all (good c) [row, column, part]
+              same c = c `elem` (concat . concatMap chosen
                                  $ [row, column, part])
               good a thing  = allright required vars
                           where vars = [a] : callBy thing
               chosen thing  = filter ((==1) . length) $ callBy thing
               necessary f   = map values $ filter (unique f) list
               unique        = ((&&) <$> (/=cell) <*>)
-              sameBy f      = (( == f cell) . f)
+              sameBy f      = ( == f cell) . f
               callBy f      = necessary $ sameBy f
               required      = [1..partSize^2]
 
@@ -140,25 +143,24 @@ makeCells list = [ a | Just a <- concat $ zipWith apply (map cook list) indices]
              where cook list = zipWith make list indices
                    values  = [1..partSize^2]
                    indices = map (\x->x-1) values
-                   make value = \x y -> if  value `elem` values
-                                    then Just $ Cell [value] x y
-                                    else Nothing
+                   make value x y =  if  value `elem` values
+                                         then Just $ Cell [value] x y
+                                         else Nothing
 
 upgrade list = if map values list' /= map values list then upgrade list'
                                                       else list'
            where list' = [updateCell list cell | cell <- list]
 
-solve list = if ((==0) $ length . filter null . map values $ list)
-                then if length undecided > 0 
-                        then filter (\y -> null
-                                    (filter null $ map values y)) 
-                             $ possibilities
+solve list = if (==0) $ length . filter null . map values $ list
+                then if not . null $ undecided
+                        then filter (\y -> not . any null . map values $ y) 
+                             possibilities
                         else [list']
                 else [[Cell [] 0 0]]
          where undecided     = filter ((1<) . length . values) list'
-               decision      = concat $ map decide undecided
+               decision      = concatMap decide undecided
                list'         = upgrade list
-               possibilities = concat $ map (\x -> solve $ 
+               possibilities = concatMap (\x -> solve $ 
                                                    updateValues list' [x]) 
                                              decision
 
@@ -166,4 +168,4 @@ getSolution = head . solve
 
 apply :: [a -> b] -> a -> [b]
 apply [] _     = []
-apply (f:fs) a = (f a) : (apply fs a)
+apply (f:fs) a = f a : apply fs a
