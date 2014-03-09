@@ -13,7 +13,7 @@ import System.Environment (getArgs)
 {- exeMain : Executable Entry Point                                           -}
 exeMain = do args <- getArgs
              case args of
-                  [name] -> do
+                  [name] ->
                       catch (do script <- readFile name
                                 runIOProgram script
                                 return () )

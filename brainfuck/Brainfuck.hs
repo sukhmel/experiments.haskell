@@ -68,7 +68,7 @@ runIOEmbedded s = let (s', i) = stepProg s in
                        Read    -> do c <- getChar
                                      runIOEmbedded $ continue s' (Just c)
                        None    -> if done s' then return s'
-                                             else do runIOEmbedded s'
+                                             else runIOEmbedded s'
 
 {- run program with predefined input inside of a default State                -}
 runProgram p input = runBrainfuck p input state
@@ -82,7 +82,7 @@ data State =
     State {memory   :: [Int],
            position, 
            carriage, 
-           max_pos  :: Int,
+           maxPos   :: Int,
            done     :: Bool,
            program,
            stdin,
@@ -102,12 +102,12 @@ continue s (Just i) = s' where
 continue s Nothing  = s 
 
 {- getter for stdout of Brainfuck-machine                                     -}
-getText   :: State -> [Char]
-getText s = stdout s
+getText :: State -> [Char]
+getText =  stdout -- alias
 
 {- getter for program in Brainfuck-machine                                    -}
-getProgram   :: State -> [Char]
-getProgram s =  program s
+getProgram :: State -> [Char]
+getProgram =  program -- alias
 
 showsState (State mem pos car max done prog sin sout) dest =
     memory ++ delimiter
@@ -135,9 +135,7 @@ showsState (State mem pos car max done prog sin sout) dest =
         delimiter        = " "
 
 instance Show State where
-    showsPrec _ a = showsState a
-
-
+    showsPrec _ = showsState
 
 {- constructor that takes program text and stdin text                         -}
 brainfuckIn prog input = state {program = prog, stdin = input}
@@ -149,14 +147,14 @@ brainfuck prog         = brainfuckIn prog ""
 changeMemory, changePosition, changeCarriage :: (Int -> Int) -> State -> State
 
 changeMemory f s   = let (x,y:ys) = splitAt (position s) (memory s)
-                     in s {memory = x ++ (mod (f y) 256) : ys}
+                     in s {memory = x ++ mod (f y) 256 : ys}
                      
 changePosition f s = let p' = f p            -- new position
                          p  = position s     -- made of current one
-                         m' | p' > m = p'    -- maximal memory position ever ac-
-                            | True   = m        -- cessed,  this is used to dis-
-                          where m = max_pos s   -- play only used memory
-                     in s {position = p', max_pos = m'}
+                         m' | p' > m    = p' -- maximal memory position ever ac-
+                            | otherwise = m  -- cessed, this is used to display
+                          where m = maxPos s -- only used memory
+                     in s {position = p', maxPos = m'}
 
 changeCarriage f s = let c' = f $ carriage s
                          d  = length p <= c' -- when  a carriage  is  past  last
@@ -188,31 +186,31 @@ seekBrace n s | n == 0 = s
 
 {- old function to convert memory into string, left for educational puproses  -}
 showMem   :: State -> String
-showMem s | max >= p = (chr $ m !! p) : showMem s' 
-          | True     = []  
+showMem s | max >= p  = chr (m !! p) : showMem s' 
+          | otherwise = []  
         where m   = memory s
               p   = position s
               s'  = s {position = p+1}
-              max = max_pos s 
+              max = maxPos s 
 
 {- convert ever accessed memory inside of state into string representation.   -}
 showMem'   :: State -> String
 showMem' s = map chr $ take len mem 
-             where len = 1 + max_pos s
+             where len = 1 + maxPos s
                    mem = memory  s
 
 {- convenience functions used to match braces                                 -}
-seekPrev s = seekBrace (-1) s
-seekNext s = seekBrace   1  s
+seekPrev = seekBrace (-1)
+seekNext = seekBrace   1
 
 {- get/set memory at current position. _CMem functions convert to/from Char, be-
      cause memory itself should be represented as integers array, but simulation
      conditions reqire that all input/output is done as they were chars       -}
 getMem   :: State -> Int
-getMem s = (memory s) !! (position s)
+getMem s = memory s !! position s
 
 setMem   :: Int -> State -> State
-setMem i = changeMemory (\_ -> i)  
+setMem i = changeMemory $ const i
 
 getCMem  :: State -> Char
 getCMem  = chr . getMem

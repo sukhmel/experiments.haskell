@@ -29,11 +29,11 @@ getsIn3 from to = filter (== to) result
 
 flatten   :: KnightPos -> [KnightPos]
 flatten Start      = []
-flatten (KP c r k) = (KP c r Start) : flatten k
+flatten (KP c r k) = KP c r Start : flatten k
 
 moveSomewhereUnique      :: KnightPos -> [KnightPos]
 moveSomewhereUnique from = filter once result
-                           where result = return from >>= moveKnight
+                           where result = moveKnight from
                                  once   = (==) <$> 
                                               length . flatten <*>
                                               length . nub . flatten
@@ -42,6 +42,6 @@ makeNUniqueSteps    :: Int -> KnightPos -> [KnightPos]
 makeNUniqueSteps 0 a = return a
 makeNUniqueSteps n k = result >>= makeNUniqueSteps (n-1)
                        where result     = nubBy unique $
-                                          return k >>= moveSomewhereUnique 
+                                          moveSomewhereUnique k
                              unique l r = (0 ==) . length $
                                           intersect (flatten l) (flatten r)
