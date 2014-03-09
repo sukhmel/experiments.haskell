@@ -13,21 +13,19 @@ cook = foldr (\x a -> replace x : a) []
    where replace x = if isDigit x || isSpace x then x else ' ' 
 
 parseTask :: FilePath -> IO [[Int]]
-parseTask name = fmap 
-                      ( map 
-                            ( map read 
-                                . filter (
-                                          (&&) 
-                                          <$> all isDigit
-                                          <*> not . null
-                                          )
-                                . words
-                            )
-                       . filter (not . null) 
-                       . lines
-                       . cook
-                       )
-                      $ readFile name
+parseTask name = ( map 
+                       ( map read 
+                           . filter (
+                                     (&&) 
+                                     <$> all isDigit
+                                     <*> not . null
+                                     )
+                           . words
+                        )
+                  . filter (any isDigit) 
+                  . lines
+                  . cook
+                  ) <$> readFile name
 
 main = do args <- getArgs
           case args of
