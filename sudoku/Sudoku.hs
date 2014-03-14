@@ -122,10 +122,9 @@ updateCell list cell@(Cell v x y) = Cell v' x y
               good a thing  = allright required vars
                           where vars = [a] : callBy thing
               chosen thing  = filter ((==1) . length) $ callBy thing
-              necessary f   = map values $ filter (unique f) list
-              unique        = ((&&) <$> (/=cell) <*>)
-              sameBy f      = ( == f cell) . f
-              callBy f      = necessary $ sameBy f
+              necessary f   = map values $ filter f list'
+              callBy f      = necessary $ ( == f cell) . f
+              list'         = filter (/= cell) list
               required      = [1..partSize^2]
 
 updateValue :: [Cell Int] -> Cell Int -> [Cell Int]
@@ -149,7 +148,11 @@ makeCells list = [ a | Just a <- concat $ zipWith apply (map cook list) indices]
 
 upgrade list = if map values list' /= map values list then upgrade list'
                                                       else list'
-           where list' = [updateCell list cell | cell <- list]
+           where list' = mutate [] list
+
+mutate  :: [Cell Int] -> [Cell Int] -> [Cell Int]
+mutate a []       = reverse a
+mutate a c@(b:bs) = mutate (updateCell (a ++ bs) b : a) bs
 
 solve list = if (==0) $ length . filter null . map values $ list
                 then if not . null $ undecided
