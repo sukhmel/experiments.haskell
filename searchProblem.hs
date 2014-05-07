@@ -2,7 +2,7 @@
 
 module Main where
 
-import Data.List ((\\))
+import Data.List ((\\), delete)
 
 type Choice m s   = ([m], s)
 type Space m s    = [Choice m s]
@@ -39,6 +39,27 @@ class SearchProblem m s where
 depthFirst, breadthFirst :: Strategy m s
 depthFirst               = (++)
 breadthFirst             = flip (++)
+
+-- search for correct order
+type Array a = [a]
+type Task  a = ([Array a], [Array a])
+
+instance Eq a => SearchProblem (Array a) (Task a) where
+    translate s  = [(next, (next:prev, delete next vars)) | next <- correct]
+               where (prev, vars) = s
+                     correct = case prev of
+                                 [] -> vars
+                                 _  -> filter (((last . head) prev==) . head) vars
+
+    isSolution s = case s of
+                     (_, (_, [])) -> True
+                     _            -> False
+
+array :: Array Int
+array = []
+
+task :: Task Int
+task = ([], [[1,2],[2,3],[2,4],[4,2]])
 
 -- | example of use
 instance SearchProblem Int Int where
@@ -80,4 +101,5 @@ instance SearchProblem Group Place where
                                _        -> False
 
 main :: IO ()
-main = print . fst . solution toys $ (Left toys :: Place)
+main = (print . reverse . fst . solution array) task
+-- main = print . fst . solution toys $ (Left toys :: Place)
