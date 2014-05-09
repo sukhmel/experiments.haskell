@@ -55,4 +55,7 @@ Here's what I've got so far (modified TicTacToe.hs from reactive-banana-wx examp
 >        network <- compile networkDescription
 >        actuate network
 
+I've been struggling for quite a while with this, and would be very glad if someone points me to what I should learn to better cope with such problems.
+It seems, that I should learn wxHaskell, and probably wxWidgets, but I'm not sure where to start.
 
+Thanks in advance, Vlad.
