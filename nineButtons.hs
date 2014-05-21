@@ -1,12 +1,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 import Control.Monad
--- import Data.Array
--- import Data.List hiding (union)
 import Data.List.Grouping (splitEvery)
 
 import Graphics.UI.WX hiding (Event)
--- import Graphics.UI.WXCore hiding (Event)
 
 import Reactive.Banana
 import Reactive.Banana.WX
@@ -38,7 +35,9 @@ buttonPad = do
        let networkDescription :: forall t. Frameworks t => Moment t ()
            networkDescription = do
                -- convert WxHaskell events to FRP events
-               let eventify         :: (Commanding w) => [w] -> Moment t [Event t ()]
+               let eventify         :: (Commanding w)
+                                    => [w]
+                                    -> Moment t [Event t ()]
                    eventify widgets = forM widgets $ \x -> event0 x command
 
                events <- eventify . concat $ btns
@@ -57,6 +56,12 @@ buttonPad = do
        network <- compile networkDescription
        actuate network
 
+-- | Translate panelwise coordinates into cartesian (more or less)
+-- e.g. what (1,1) (1,2) | (2,1) (2,2)    after   (0,0) (1,0) | (2,0) (3,0)
+--      was: (1,3) (1,4) | (2,3) (2,4)    becomes (0,1) (1,1) | (2,1) (3,1)
+--           ------------+------------            ------------+------------
+--           (3,1) (3,2) | (4,1) (4,2)            (0,2) (1,2) | (2,2) (3,2)
+--           (3,3) (3,4) | (4,3) (4,4)            (0,3) (1,3) | (2,3) (3,3)
 positionToCoordinates :: (Int, Int) -> (Int, Int)
 positionToCoordinates
           (glob, loc) = (x, y)
