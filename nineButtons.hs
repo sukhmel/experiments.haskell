@@ -1,6 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 import Control.Monad
+import Data.Maybe
 import Data.List.Grouping (splitEvery)
 
 import Graphics.UI.WX hiding (Event)
@@ -13,10 +14,10 @@ splitInGroupsOf n = takeWhile ((n ==) . length)
                   . splitEvery n
 
 main :: IO ()
-main = start buttonPad
+main = start mainFrame
 
-buttonPad ::  IO ()
-buttonPad = do
+mainFrame ::  IO ()
+mainFrame = do
        pad    <- frame [ text := "Sudoku frame" ]
        noText <- staticText pad [text := ""]
        btns   <- replicateM 9
@@ -50,11 +51,30 @@ buttonPad = do
 
                    bSet   = stepper (-1,-1) chosen
                eSet   <- changes bSet
-               reactimate' $ fmap (print . positionToCoordinates)
+               reactimate' $ fmap (\ x -> do
+                                         ask <- buttonPad pad
+                                         putStrLn $     (show . fromJust) ask
+                                             ++ " @ " ++ show x)
                           <$> eSet
 
        network <- compile networkDescription
        actuate network
+
+buttonPad :: Window a -> IO (Maybe Int)
+buttonPad father = do
+       pad    <- dialog father  [text := "?"]
+       btns   <- mapM (\n -> button pad
+                             [ size := sz 40 40
+                             , text := [n]])
+                 ['1'..'9']
+       set pad [ layout := column 5
+                         [ grid 0 0
+                           . map ( map widget )
+                           . splitInGroupsOf 3
+                           $ btns] ]
+       showModal pad (\ s -> mapM_ (\ (b, i) -> set b
+                                    [ on command := s (Just i)])
+                                    $ zip btns [1..])
 
 -- | Translate panelwise coordinates into cartesian (more or less)
 -- e.g. what (1,1) (1,2) | (2,1) (2,2)    after   (0,0) (1,0) | (2,0) (3,0)
