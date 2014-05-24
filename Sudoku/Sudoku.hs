@@ -1,5 +1,8 @@
-module Sudoku (
-    sudoku, getSolution, printSudoku, updateValues, makeCells, getTask
+module Sudoku.Sudoku (
+    sudoku, values, step,
+    getSolution, printSudoku,
+    updateValues, makeCells,
+    getTask, partSize, getCell, Cell
 ) where
 
 import Control.Applicative
@@ -11,12 +14,12 @@ utf      = False
 -- make puzzle out of array of values
 getTask task = updateValues sudoku $ makeCells task
 
--- unused: get all combinations where one element is taken from each input list 
+-- unused: get all combinations where one element is taken from each input list
 permutation :: (Eq a) => [[a]] -> [[a]]
 permutation [] = [[]]
 permutation (x:xs) = [ a : b | a <- x, b <- permutation xs, a `notElem` b ]
 
--- Suppose allright x y, and check if it is possible to create combination of 
+-- Suppose allright x y, and check if it is possible to create combination of
 -- elements from y (one element from each list) containing all elements from x.
 allright :: (Eq a) => [a] -> [[a]] -> Bool
 allright [] _     = True
@@ -41,6 +44,9 @@ data Cell a = Cell {values :: [a], column :: Int, row :: Int}
 
 instance Eq (Cell a) where
     (Cell _ lx ly) == (Cell _ rx ry) = (lx == rx) && (ly == ry)
+
+instance Ord (Cell a) where
+    (Cell _ lx ly) <  (Cell _ rx ry) = (ly <  ry) || (lx <  rx)
 
 -- Positional constraint
 part :: Cell a -> Int
@@ -108,9 +114,14 @@ showSudoku s = [concat [v (get s $ real x y) x y | x<- indices] | y <- indices]
                                (True, True, _, _, _, _)       -> "-+-" /-> "─┼─"
                                (_, True, _, _, _, _)          -> "---" /-> "───"
                  a /-> b      = if not utf then a else b
-                 get s (x, y) = filter 
+                 get s (x, y) = filter
                                 ((&&) <$> (x ==) . column <*> (y ==) . row) s
 
+getCell  :: [Cell Int] -> (Int, Int) -> Cell Int
+getCell list (x, y) = case result of
+                           []   -> Cell [] x y
+                           a:_  -> a
+       where result = filter (== (Cell [] x y)) list
 
 updateCell :: [Cell Int] -> Cell Int -> Cell Int
 updateCell list cell@(Cell v x y) = Cell v' x y
@@ -132,6 +143,9 @@ updateValue list cell@(Cell v x y) = [f c | c <- list]
                                  where f c | c /= cell = c
                                            | c == cell = cell
 
+updateValueAt :: (Int, Int) -> [Cell Int] -> [Int] -> [Cell Int]
+updateValueAt (x,y) list v = updateValue list $ Cell v x y
+
 decide (Cell [] _ _)     = []
 decide (Cell (v:vs) x y) = Cell [v] x y : decide (Cell vs x y)
 
@@ -150,21 +164,24 @@ upgrade list = if map values list' /= map values list then upgrade list'
                                                       else list'
            where list' = mutate [] list
 
+step    :: [Cell Int] -> (Int, Int) -> [Int] -> [Cell Int]
+step l c v = upgrade $ updateValueAt c l v
+
 mutate  :: [Cell Int] -> [Cell Int] -> [Cell Int]
 mutate a []       = reverse a
 mutate a c@(b:bs) = mutate (updateCell (a ++ bs) b : a) bs
 
 solve list = if (==0) $ length . filter null . map values $ list
                 then if not . null $ undecided
-                        then filter (\y -> not . any null . map values $ y) 
+                        then filter (\y -> not . any null . map values $ y)
                              possibilities
                         else [list']
                 else [[Cell [] 0 0]]
          where undecided     = filter ((1<) . length . values) list'
                decision      = concatMap decide undecided
                list'         = upgrade list
-               possibilities = concatMap (\x -> solve $ 
-                                                   updateValues list' [x]) 
+               possibilities = concatMap (\x -> solve $
+                                                   updateValues list' [x])
                                              decision
 
 getSolution = head . solve
