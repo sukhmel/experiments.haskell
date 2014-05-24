@@ -2,7 +2,6 @@
 
 import Control.Monad
 import Data.Maybe
-import Data.List hiding (union)
 import Data.List.Grouping (splitEvery)
 
 import Graphics.UI.WX hiding (Event)
@@ -28,25 +27,21 @@ mainFrame = do
                              [ size := sz 40 40
                              , text := [n]])
                  ['1'..'9']
-       set pad [ layout := column 5
+       cbtns  <- mapM (\ n -> button pad
+                            [ size := sz 40 40
+                          , text := [n]])
+                     ['1'..'9']
+       set pad [ layout := column 15
                            [( grid 15 15
                             . map ( map ( grid 0 0
                                         . map ( map widget )
                                         . splitInGroupsOf 3))
                             . splitInGroupsOf 3) btns
+                           , row 4
+                           . map widget
+                           $ cbtns
                            , widget noText]
                     ]
-
-       cpad   <- dialog pad [text := "?"]
-       cbtns  <- mapM (\ n -> button cpad
-                            [ size := sz 40 40
-                          , text := [n]])
-                     ['1'..'9']
-       set cpad [ layout := column 5
-                          [ grid 0 0
-                            . map ( map widget )
-                            . splitInGroupsOf 3
-                            $ cbtns] ]
 
        let networkDescription :: forall t. Frameworks t => Moment t ()
            networkDescription = do
@@ -70,8 +65,6 @@ mainFrame = do
                    bSet   = stepper (Left (-1,-1)) chosen
 
                eSet   <- changes bSet
-
-               sink cpad [visible :== (Left (-1,-1) /=) <$> bSet]
 
 --               reactimate' $ fmap (const
 --                           $ showModal cpad (\ s -> s $ Just 42) >> return ())
@@ -102,19 +95,32 @@ mainFrame = do
 
                changeState <- changes state
 
-               let update = (\ beh ->
+               let update = (\ beh sel ->
                              mapM_ (\ (w, i) ->
                                       sink w [ text :==
                                                valuesToLabel
                                              . values
                                              . flip getCell i
                                              . (\ (_,_,k) -> k)
-                                            <$> beh])
+                                            <$> beh
+                                             , fontWeight :==
+                                               either (\x -> if x == i
+                                                        then WeightBold
+                                                        else WeightNormal)
+                                                      (const WeightNormal)
+                                            <$> sel
+                                             , textColor :==
+                                               either (\x -> if x == i
+                                                        then red
+                                                        else black)
+                                                      (const black)
+                                            <$> sel
+                                            ])
                              $ zip (concat btns)
                                    [ positionToCoordinates
                                      (x,y) | x <- [1..9]
                                            , y <- [1..9]])
-                             state
+                             state bSet
                    enable = mapM_ (\ (b,i) ->
                                    sink b [enabled :== (\ (_,_,lst) ->
                                                         either ( elem i
@@ -124,13 +130,11 @@ mainFrame = do
                                                    <$> state <*> bSet])
                                   $ zip cbtns [1..]
 
-               sink cpad [visible :== ((-1) /=) <$> cBehav]
 
                enable
                update
 
-               reactimate' $ fmap ( printSudoku
-                                  . \ (_,_,k) -> k) <$> changeState
+--             reactimate' $ fmap (\ (_,_,k) -> printSudoku k) <$> changeState
 
 
        network <- compile networkDescription
