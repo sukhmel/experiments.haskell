@@ -1,5 +1,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
+module Main (
+    main
+) where
+
 import Control.Monad
 import Data.Maybe
 import Data.List.Grouping (splitEvery)
@@ -10,12 +14,20 @@ import Reactive.Banana
 import Reactive.Banana.WX
 
 import Sudoku.Sudoku
+import Sudoku.TaskReader
+
+import System.Environment (getArgs)
 
 main :: IO ()
-main = start mainFrame
+main = do args <- getArgs
+          task <- case args of
+                      [file] -> (\x -> step x (-1,-1) [])
+                            <$> readTask file
+                      _      -> return sudoku
+          start . mainFrame $ task
 
-mainFrame ::  IO ()
-mainFrame = do
+mainFrame :: [Cell Int] -> IO ()
+mainFrame task = do
        pad    <- frame [ text := "Sudoku frame" ]
        noText <- staticText pad [text := ""]
        btns   <- replicateM 9                     -- Selection buttons lets user
@@ -72,10 +84,10 @@ mainFrame = do
                    moves = stepGame <$> fullEvent
 
                    eState :: Event t Game
-                   eState = accumE (Nothing, Nothing, sudoku) moves
+                   eState = accumE (Nothing, Nothing, task) moves
 
                    state :: Behavior t Game
-                   state = stepper (Nothing, Nothing, sudoku) eState
+                   state = stepper (Nothing, Nothing, task) eState
 
                    -- | Update visible state of buttons: enable possible
                    -- variants, disable others, highlight current selection
