@@ -97,11 +97,9 @@ mainFrame task = do
                                     cel (_,_,c) = c
                                 in  do
                                     mapM_ (\ (w, i) ->
-                                        let vals x | x'  ==  i =
-                                                       (WeightBold  , red  )
-                                                   | otherwise =
-                                                       (WeightNormal, black)
-                                                 where x' = sel x
+                                        let vals x = if sel x == i
+                                                     then (WeightBold  , red  )
+                                                     else (WeightNormal, black)
                                             here = vals <$> beh
                                             textAt = valuesToLabel
                                                    . values
