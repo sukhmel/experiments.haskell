@@ -11,10 +11,6 @@ import Reactive.Banana.WX
 
 import Sudoku.Sudoku
 
-splitInGroupsOf :: Int -> [a] -> [[a]]
-splitInGroupsOf n = takeWhile ((n ==) . length)
-                  . splitEvery n
-
 main :: IO ()
 main = start mainFrame
 
@@ -22,14 +18,14 @@ mainFrame ::  IO ()
 mainFrame = do
        pad    <- frame [ text := "Sudoku frame" ]
        noText <- staticText pad [text := ""]
-       btns   <- replicateM 9
-               $ mapM (\n -> button pad
+       btns   <- replicateM 9                     -- Selection buttons lets user
+               $ mapM (\n -> button pad          -- navigate sudoku game.
                              [ size := sz 40 40
                              , text := [n]])
                  ['1'..'9']
-       cbtns  <- mapM (\ n -> button pad
-                            [ size := sz 40 40
-                          , text := [n]])
+       cbtns  <- mapM (\ n -> button pad          -- Choice buttons to let user
+                            [ size := sz 40 40    -- choose  what  to  write in
+                          , text := [n]])         -- currently selected cell.
                      ['1'..'9']
        set pad [ layout := column 15
                            [( grid 15 15
@@ -43,7 +39,11 @@ mainFrame = do
                            , widget noText]
                     ]
 
-       let networkDescription :: forall t. Frameworks t => Moment t ()
+       let coordinates = [positionToCoordinates (x,y) | x <- [1..9]
+                                                      , y <- [1..9]]
+           buttons     = concat btns
+
+           networkDescription :: forall t. Frameworks t => Moment t ()
            networkDescription = do
                -- convert WxHaskell events to FRP events
                let eventify         :: (Commanding w)
@@ -51,40 +51,25 @@ mainFrame = do
                                     -> Moment t [Event t ()]
                    eventify widgets = forM widgets $ \x -> event0 x command
 
-               localEvents <- eventify cbtns
-               events      <- eventify . concat $ btns
+               selectionEvents <- eventify buttons
+               choiceEvents    <- eventify cbtns
 
-               let chosen :: Event t (Either (Int,Int) Int)
+               let selected :: Event t (Either (Int,Int) Int)
+                   selected = foldl1 union
+                          . zipWith (<$)
+                          ( map Left coordinates)
+                          $ selectionEvents
+
+                   chosen :: Event t  (Either (Int, Int) Int)
                    chosen = foldl1 union
-                          . zipWith (<$) [ Left
-                                         . positionToCoordinates
-                                         $ (x,y) | x <- [1..9]
-                                                 , y <- [1..9]]
-                          $ events
-
-                   bSet   = stepper (Left (-1,-1)) chosen
-
-               eSet   <- changes bSet
-
---               reactimate' $ fmap (const
---                           $ showModal cpad (\ s -> s $ Just 42) >> return ())
---                          <$> eSet
---
-               let cEvent :: Event t  (Either (Int, Int) Int)
-                   cEvent = foldl1 union
                           . zipWith (<$)
                           ( map Right [1..9])
-                          $ localEvents
+                          $ choiceEvents
 
-                   cBehav = stepper (-1)
-                       . foldl1 union
-                       . zipWith (<$) [1..9]
-                       $ localEvents
-
-                   fullEvent = union cEvent chosen
+                   fullEvent = chosen `union` selected
 
                    moves :: Event t (Game -> Game)
-                   moves = (\ s -> stepGame s) <$> fullEvent
+                   moves = stepGame <$> fullEvent
 
                    eState :: Event t Game
                    eState = accumE (Nothing, Nothing, sudoku) moves
@@ -92,54 +77,46 @@ mainFrame = do
                    state :: Behavior t Game
                    state = stepper (Nothing, Nothing, sudoku) eState
 
+                   -- | Update visible state of buttons: enable possible
+                   -- variants, disable others, highlight current selection
+                   update     :: Behavior t Game
+                              -> Moment t ()
+                   update beh = let sel (a,_,_) = fromMaybe (-1,-1) a
+                                    cel (_,_,c) = c
+                                in  do
+                                    mapM_ (\ (w, i) ->
+                                        let vals x | x'  ==  i =
+                                                       (WeightBold  , red  )
+                                                   | otherwise =
+                                                       (WeightNormal, black)
+                                                 where x' = sel x
+                                            here = vals <$> beh
+                                            textAt = valuesToLabel
+                                                   . values
+                                                   . flip getCell i
+                                                   . cel
+                                        in sink w [ text :== textAt <$> beh
+                                                  , fontWeight :== fst <$> here
+                                                  , textColor  :== snd <$> here
+                                                  ])
+                                     $ zip buttons coordinates
+                                    mapM_ (\ (b,i) ->
+                                           sink b [enabled :== elem i
+                                                             . values
+                                                             . liftM2 getCell
+                                                               cel sel <$> beh])
+                                          $ zip cbtns [1..]
 
-               changeState <- changes state
-
-               let update = (\ beh sel ->
-                             mapM_ (\ (w, i) ->
-                                      sink w [ text :==
-                                               valuesToLabel
-                                             . values
-                                             . flip getCell i
-                                             . (\ (_,_,k) -> k)
-                                            <$> beh
-                                             , fontWeight :==
-                                               either (\x -> if x == i
-                                                        then WeightBold
-                                                        else WeightNormal)
-                                                      (const WeightNormal)
-                                            <$> sel
-                                             , textColor :==
-                                               either (\x -> if x == i
-                                                        then red
-                                                        else black)
-                                                      (const black)
-                                            <$> sel
-                                            ])
-                             $ zip (concat btns)
-                                   [ positionToCoordinates
-                                     (x,y) | x <- [1..9]
-                                           , y <- [1..9]])
-                             state bSet
-                   enable = mapM_ (\ (b,i) ->
-                                   sink b [enabled :== (\ (_,_,lst) ->
-                                                        either ( elem i
-                                                               . values
-                                                               . getCell lst)
-                                                               ( const False))
-                                                   <$> state <*> bSet])
-                                  $ zip cbtns [1..]
-
-
-               enable
-               update
-
---             reactimate' $ fmap (\ (_,_,k) -> printSudoku k) <$> changeState
-
+               update state
 
        network <- compile networkDescription
        actuate network
 
+
+-- | Split a list into groups of N and take only those with exact size of N.
+splitInGroupsOf :: Int -> [a] -> [[a]]
+splitInGroupsOf n = takeWhile ((n ==) . length)
+                  . splitEvery n
 
 -- | Translate panelwise coordinates into cartesian (more or less)
 -- e.g. what (1,1) (1,2) | (2,1) (2,2)    after   (0,0) (1,0) | (2,0) (3,0)
