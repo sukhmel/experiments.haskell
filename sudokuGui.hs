@@ -41,6 +41,7 @@ mainFrame task = do
        auto   <- checkBox pad [text := "Auto update possibilities"]
        solve  <- button   pad [text := "Solve further"]
        upd    <- button   pad [text := "Update now"]
+       undo   <- button   pad [text := "Undo"]
        set pad [ layout := column 15
                            [( grid 15 15
                             . map ( map ( grid 0 0
@@ -50,7 +51,10 @@ mainFrame task = do
                            , row 4
                            . map widget $ cbtns
                            , expand $ widget auto
-                           , expand $ widget upd
+                           , hstretch
+                           $ row 4
+                             [ expand . stretch $ widget upd
+                             , expand . stretch $ widget undo]
                            , expand $ widget solve
                            , widget noText]
                     ]
@@ -71,6 +75,7 @@ mainFrame task = do
                choiceEvents    <- eventify cbtns
                controlEvents   <- do a <- event0 auto command
                                      b <- eventify [ solve
+                                                   , undo
                                                    , upd ]
                                      return (a:b)
 
@@ -89,7 +94,7 @@ mainFrame task = do
                    control :: Event t Move
                    control = foldl1 union
                             . zipWith (<$)
-                            [ AutoUp, Solve, Update ]
+                            [ AutoUp, Solve, Undo, Update ]
                             $ controlEvents
 
                    fullEvent = chosen
@@ -167,6 +172,7 @@ valuesToLabel a = case a of
 data Game = State { sel :: Maybe (Int,Int)
                   , val :: Maybe Int
                   , cel :: [Cell Int]
+                  , hst :: [[Cell Int]]
                   , aut :: Bool}
             deriving Show
 
@@ -175,29 +181,39 @@ data Move = Select (Int, Int)
           | AutoUp
           | Update
           | Solve
+          | Undo
             deriving Show
 
-begin task = State Nothing Nothing task False
+begin ::  [Cell Int] -> Game
+begin task = State Nothing Nothing task [] False
 
 stepGame    :: Move
             -> Game
             -> Game
-stepGame m s@(State c v t a) = r'
-         where r' = if isJust c' && isJust v'
-                       then s { sel = Nothing
-                              , val = Nothing
-                              , cel = f t (fromJust c')
-                                          [fromJust v']}
-                       else s'
-               f  = if a
-                       then update
-                       else step
-               c' = sel s'
-               v' = val s'
-               s' = case m of
-                       Select i -> s {sel = Just i}
-                       Choose n -> s {val = Just n}
-                       AutoUp   -> s {aut = not a}
-                       Update   -> s {cel = update t (-1,-1) []}
-                       Solve    -> s {cel = getSolution t}
+stepGame m s = r'
+    where r' = if isJust c' && isJust v'
+                  then s' { sel = Nothing
+                          , val = Nothing
+                          , cel = f t (fromJust c')
+                                      [fromJust v']
+                          , hst = t:h}
+                  else s'
+          f  = if a
+                  then update
+                  else step
+          c' = sel s'
+          v' = val s'
+          t  = cel s
+          h  = hst s
+          a  = aut s
+          (u,h') = case h of
+                        (b:c) -> (b, c)
+                        _     -> (t, h)
+          s' = case m of
+                  Select i -> s {sel = Just i}
+                  Choose n -> s {val = Just n}
+                  AutoUp   -> s {aut = not a}
+                  Update   -> s {cel = update t (-1,-1) [], hst = t:h}
+                  Solve    -> s {cel = getSolution t,       hst = t:h}
+                  Undo     -> s {cel = u,                   hst =  h'}
 
