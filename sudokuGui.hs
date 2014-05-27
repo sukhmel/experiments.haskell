@@ -21,8 +21,7 @@ import System.Environment (getArgs)
 main :: IO ()
 main = do args <- getArgs
           task <- case args of
-                      [file] -> (\x -> step x (-1,-1) [])
-                            <$> readTask file
+                      [file] -> readTask file
                       _      -> return sudoku
           start . mainFrame $ task
 
@@ -39,6 +38,9 @@ mainFrame task = do
                             [ size := sz 40 40    -- choose  what  to  write in
                           , text := [n]])         -- currently selected cell.
                      ['1'..'9']
+       auto   <- checkBox pad [text := "Auto update possibilities"]
+       solve  <- button   pad [text := "Solve further"]
+       upd    <- button   pad [text := "Update now"]
        set pad [ layout := column 15
                            [( grid 15 15
                             . map ( map ( grid 0 0
@@ -46,8 +48,10 @@ mainFrame task = do
                                         . splitInGroupsOf 3))
                             . splitInGroupsOf 3) btns
                            , row 4
-                           . map widget
-                           $ cbtns
+                           . map widget $ cbtns
+                           , expand $ widget auto
+                           , expand $ widget upd
+                           , expand $ widget solve
                            , widget noText]
                     ]
 
@@ -65,59 +69,71 @@ mainFrame task = do
 
                selectionEvents <- eventify buttons
                choiceEvents    <- eventify cbtns
+               controlEvents   <- do a <- event0 auto command
+                                     b <- eventify [ solve
+                                                   , upd ]
+                                     return (a:b)
 
-               let selected :: Event t (Either (Int,Int) Int)
+               let selected :: Event t Move
                    selected = foldl1 union
                           . zipWith (<$)
-                          ( map Left coordinates)
+                          ( map Select coordinates)
                           $ selectionEvents
 
-                   chosen :: Event t  (Either (Int, Int) Int)
-                   chosen = foldl1 union
-                          . zipWith (<$)
-                          ( map Right [1..9])
-                          $ choiceEvents
+                   chosen   :: Event t Move
+                   chosen   = foldl1 union
+                            . zipWith (<$)
+                            ( map Choose [1..9])
+                            $ choiceEvents
 
-                   fullEvent = chosen `union` selected
+                   control :: Event t Move
+                   control = foldl1 union
+                            . zipWith (<$)
+                            [ AutoUp, Solve, Update ]
+                            $ controlEvents
+
+                   fullEvent = chosen
+                             `union` control
+                             `union` selected
 
                    moves :: Event t (Game -> Game)
                    moves = stepGame <$> fullEvent
 
                    eState :: Event t Game
-                   eState = accumE (Nothing, Nothing, task) moves
+                   eState = accumE (begin task) moves
 
                    state :: Behavior t Game
-                   state = stepper (Nothing, Nothing, task) eState
+                   state = stepper (begin task) eState
 
                    -- | Update visible state of buttons: enable possible
                    -- variants, disable others, highlight current selection
-                   update     :: Behavior t Game
-                              -> Moment t ()
-                   update beh = let sel (a,_,_) = fromMaybe (-1,-1) a
-                                    cel (_,_,c) = c
-                                in  do
-                                    mapM_ (\ (w, i) ->
-                                        let vals x = if sel x == i
-                                                     then (WeightBold  , red  )
-                                                     else (WeightNormal, black)
-                                            here = vals <$> beh
-                                            textAt = valuesToLabel
-                                                   . values
-                                                   . flip getCell i
-                                                   . cel
-                                        in sink w [ text :== textAt <$> beh
-                                                  , fontWeight :== fst <$> here
-                                                  , textColor  :== snd <$> here
-                                                  ])
-                                     $ zip buttons coordinates
-                                    mapM_ (\ (b,i) ->
-                                           sink b [enabled :== elem i
-                                                             . values
-                                                             . liftM2 getCell
-                                                               cel sel <$> beh])
-                                          $ zip cbtns [1..]
+                   updateGui     :: Behavior t Game
+                                 -> Moment t ()
+                   updateGui beh =
+                       let s = fromMaybe (-1,-1) . sel
+                       in  do
+                           mapM_ (\ (w, i) ->
+                               let vals x = if s x == i
+                                            then (WeightBold  , red  )
+                                            else (WeightNormal, black)
+                                   here = vals <$> beh
+                                   textAt = valuesToLabel
+                                          . values
+                                          . flip getCell i
+                                          . cel
+                               in sink w [ text :== textAt <$> beh
+                                         , fontWeight :== fst <$> here
+                                         , textColor  :== snd <$> here
+                                         ])
+                            $ zip buttons coordinates
+                           mapM_ (\ (b,i) ->
+                                  sink b [enabled :== elem i
+                                                    . values
+                                                    . liftM2 getCell
+                                                      cel s <$> beh])
+                                 $ zip cbtns [1..]
 
-               update state
+               updateGui state
 
        network <- compile networkDescription
        actuate network
@@ -148,18 +164,40 @@ valuesToLabel a = case a of
                        [n] -> show n
                        _   -> "…"
 
-type Game = (Maybe (Int,Int), Maybe Int, [Cell Int])
+data Game = State { sel :: Maybe (Int,Int)
+                  , val :: Maybe Int
+                  , cel :: [Cell Int]
+                  , aut :: Bool}
+            deriving Show
 
-stepGame    :: Either (Int, Int) Int
+data Move = Select (Int, Int)
+          | Choose Int
+          | AutoUp
+          | Update
+          | Solve
+            deriving Show
+
+begin task = State Nothing Nothing task False
+
+stepGame    :: Move
             -> Game
             -> Game
-stepGame a (c, v, task) = value'
-         where value'   = if isJust c' && isJust v'
-                             then ( Nothing
-                                  , Nothing
-                                  , step task (fromJust c')
-                                              [fromJust v'])
-                             else (c', v', task)
-               (c', v') = case a of
-                               Left  c'' -> (Just c'', v)
-                               Right v'' -> (c, Just v'')
+stepGame m s@(State c v t a) = r'
+         where r' = if isJust c' && isJust v'
+                       then s { sel = Nothing
+                              , val = Nothing
+                              , cel = f t (fromJust c')
+                                          [fromJust v']}
+                       else s'
+               f  = if a
+                       then update
+                       else step
+               c' = sel s'
+               v' = val s'
+               s' = case m of
+                       Select i -> s {sel = Just i}
+                       Choose n -> s {val = Just n}
+                       AutoUp   -> s {aut = not a}
+                       Update   -> s {cel = update t (-1,-1) []}
+                       Solve    -> s {cel = getSolution t}
+

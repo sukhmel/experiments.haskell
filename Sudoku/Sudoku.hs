@@ -1,5 +1,5 @@
 module Sudoku.Sudoku (
-    sudoku, values, step,
+    sudoku, values, update, step,
     getSolution, printSudoku,
     updateValues, makeCells,
     getTask, partSize, getCell, Cell
@@ -146,12 +146,15 @@ updateValue list cell@(Cell v x y) = [f c | c <- list]
 updateValueAt :: (Int, Int) -> [Cell Int] -> [Int] -> [Cell Int]
 updateValueAt (x,y) list v = updateValue list $ Cell v x y
 
+decide ::  Cell a -> [Cell a]
 decide (Cell [] _ _)     = []
 decide (Cell (v:vs) x y) = Cell [v] x y : decide (Cell vs x y)
 
+updateValues ::  [Cell Int] -> [Cell Int] -> [Cell Int]
 updateValues list []     = list
 updateValues list (c:cs) = updateValue (updateValues list cs)  c
 
+makeCells ::  [[Int]] -> [Cell Int]
 makeCells list = [ a | Just a <- concat $ zipWith apply (map cook list) indices]
              where cook list = zipWith make list indices
                    values  = [1..partSize^2]
@@ -160,12 +163,16 @@ makeCells list = [ a | Just a <- concat $ zipWith apply (map cook list) indices]
                                          then Just $ Cell [value] x y
                                          else Nothing
 
+upgrade ::  [Cell Int] -> [Cell Int]
 upgrade list = if map values list' /= map values list then upgrade list'
                                                       else list'
            where list' = mutate [] list
 
-step    :: [Cell Int] -> (Int, Int) -> [Int] -> [Cell Int]
-step l c v = upgrade $ updateValueAt c l v
+update    :: [Cell Int] -> (Int, Int) -> [Int] -> [Cell Int]
+update l c = upgrade . step l c
+
+step      :: [Cell Int] -> (Int, Int) -> [Int] -> [Cell Int]
+step   l c v = updateValueAt c l v
 
 mutate  :: [Cell Int] -> [Cell Int] -> [Cell Int]
 mutate a []       = reverse a
