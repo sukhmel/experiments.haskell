@@ -23,12 +23,17 @@ mainFrame :: IO ()
 mainFrame = do
        pad      <- frame [ text := "Mahjong calculator" ]
        noText <- staticText pad [text := ""]
-       east   <- replicateM 4 $ button pad [text := ""]
-       users  <- replicateM 4 $ textEntry pad [alignment := AlignCentre]
-       score <- replicateM 4 $ textEntry pad [ text := ""
+       east   <- replicateM 4 $ button pad [ text := ""
+                                           , fontSize := 16
+                                           , outerSize := sz 32 32 ]
+       users  <- replicateM 4 $ textEntry pad [alignment := AlignCentre
+                                              , processEnter := True
+                                              , processTab := True
+                                              ]
+       score  <- replicateM 4 $ textEntry pad [ text := ""
+                                              , processEnter := True
+                                              , processTab := True
                                               , alignment := AlignRight
-                                              -- , fontUnderline := True
-                                              -- , fontWeight := WeightBold
                                               ]
        deltas <- mapM (\ a -> textEntry pad [ enabled := False
                                            , alignment := a ])
@@ -61,7 +66,7 @@ mainFrame = do
                          , centre
                          . stretch
                          . row 15
-                         . map widget
+                         . map (fill . stretch . widget)
                          $ [addNow, undo]
                          , widget noText] ]
 
@@ -76,6 +81,8 @@ mainFrame = do
 
                eastEvents  <- eventify east
                winEvents   <- eventify winner
+               textEvents  <- eventify $ concat [ users, score ]
+
                undoEvent   <- event0 undo   command
                sumEvent    <- event0 addNow command
 
@@ -95,27 +102,28 @@ mainFrame = do
                             . mapM (\ x -> behaviorText x "")
                             $ score
 
-               let behs = (\ a b c -> proceed c . a . b )
-                       <$> userBehav
-                       <*> scoreBehav
-                   wind = foldl1 union
+               let wind = foldl1 union
                         . zipWith (<$) (map East [0..])
                         $ eastEvents
                    lead = foldl1 union
                         . zipWith (<$) (map Wins [0..])
                         $ winEvents
+                   txtE = foldl1 union
+                        $ textEvents
                    undE = Undo  <$ undoEvent
                    sumE = SumUp <$ sumEvent
 
-                   full = wind
+                   allE = wind
                         `union` lead
                         `union` undE
                         `union` sumE
+                   allB = (.) <$> userBehav <*> scoreBehav
 
-                   state = accumB initialState $ apply behs full
+                   setE = apply ( const <$> allB ) txtE
 
-               stateChanges <- changes state
-               reactimate' $ fmap print <$> stateChanges
+                   state = {- ($) <$> allB <*> -} accumB initialState
+                                            (union setE $ proceed <$> allE)
+
                -- | Update visible state of buttons: enable possible
                -- variants, disable others, highlight current selection
                let updateGui   :: Behavior t State
@@ -126,9 +134,9 @@ mainFrame = do
                                   $ zip t [0..]
                            has s f i x = if i == f x then s else ""
                        up winner $ has "Won!" winPos
-                       up east   $ has "East" eastPos
+                       up east   $ has "東" eastPos
                        up total  $ (\ i s -> show $ totals s !! i)
-                       up score  $ (\ i s -> show $ scores s !! i)
+                       up score  $ (\ i s -> showV $ scores s !! i)
                        up sumAll $ (\ i s -> show $ overall s !! i)
                        up (take 12 deltas) $ (\ i s -> show
                                            . (!!i)
@@ -175,12 +183,12 @@ data Setting   = East  Player
             deriving (Show, Eq)
 
 initialState :: State
-initialState = State 0 four [] 0 four (replicate 12 0) four []
+initialState = State 0 four [] (-1) four (replicate 12 0) four []
     where four = replicate 4 0
 
 proceed :: Setting -> State -> State
 proceed got s = if got /= Undo
-                    then updated -- { history = s : history s}
+                    then updated { history = s : history s}
                     else s'
         where s'      = case got of
                              East  p -> s {eastPos = p}
@@ -233,6 +241,7 @@ proceed got s = if got /= Undo
               indices = liftM2 (,) [0..3] [0..3]
 
 readV s = listToMaybe [x | (x,"") <- reads s]
+showV i = if i == 0 then "" else show i
 
 notEmpty :: (a, [b]) -> Maybe a
 notEmpty (a, s) = a <$ listToMaybe s
