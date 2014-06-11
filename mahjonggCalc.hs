@@ -1,12 +1,11 @@
-
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ScopedTypeVariables, DeriveGeneric, DefaultSignatures #-}
 
 module Main (
     main
 ) where
 
 import Control.Monad
-import Data.List (transpose, subsequences)
+import Data.List (transpose)
 import Data.Maybe
 import Data.Traversable (sequenceA)
 import Data.List.Grouping (splitEvery)
@@ -16,20 +15,36 @@ import Graphics.UI.WX hiding (Event)
 import Reactive.Banana
 import Reactive.Banana.WX
 
-main :: IO ()
-main = start mainFrame
+import System.Environment (getArgs)
+import Data.Serialize (Serialize, encode, decode)
+import GHC.Generics (Generic)
+import qualified Data.ByteString.Char8 as B
 
-mainFrame :: IO ()
-mainFrame = do
+getGame a = do game <- case a of
+                            [file] -> B.readFile file
+                                  >>= return
+                                    . either (const def) id
+                                    . decode
+                            _      -> return def
+               return game
+    where def = (replicate 4 "", initialState)
+
+
+main :: IO ()
+main = getArgs >>= getGame >>= start . mainFrame
+
+mainFrame :: ([String], State) -> IO ()
+mainFrame (names, begin) = do
        pad      <- frame [ text := "Mahjong calculator" ]
        noText <- staticText pad [text := ""]
        east   <- replicateM 4 $ button pad [ text := ""
-                                           , fontSize := 16
-                                           , outerSize := sz 32 32 ]
-       users  <- replicateM 4 $ textEntry pad [alignment := AlignCentre
-                                              , processEnter := True
-                                              , processTab := True
-                                              ]
+                                           , fontSize := 25
+                                           , outerSize := sz 42 42 ]
+       users  <- mapM (\ n -> textEntry pad [ text := n
+                                            , alignment := AlignCentre
+                                            , processEnter := True
+                                            , processTab := True
+                                            ]) names
        score  <- replicateM 4 $ textEntry pad [ text := ""
                                               , processEnter := True
                                               , processTab := True
@@ -39,12 +54,14 @@ mainFrame = do
                                            , alignment := a ])
                $ concat [replicate 12 AlignRight, replicate 4 AlignCentre]
        winner <- replicateM 4 $ button pad [text := ""]
-       sumAll <- replicateM 4 $ textEntry pad [text := "0"
+       sumAll <- replicateM 4 $ textEntry pad [ text := "0"
+                                              , bgcolor := rgb 190 255 110
                                               , enabled := False
                                               , alignment := AlignCentre]
 
        addNow <- button pad [text := "Sum current and overall"]
        undo   <- button pad [text := "Undo"]
+       save   <- button pad [text := "Save"]
 
        let box = splitInGroupsOf 4
                . concat
@@ -67,7 +84,7 @@ mainFrame = do
                          . stretch
                          . row 15
                          . map (fill . stretch . widget)
-                         $ [addNow, undo]
+                         $ [addNow, undo, save]
                          , widget noText] ]
 
 
@@ -85,6 +102,7 @@ mainFrame = do
 
                undoEvent   <- event0 undo   command
                sumEvent    <- event0 addNow command
+               saveEvent   <- event0 save   command
 
                userBehav   <- fmap ( ( ( proceed
                                        . Users
@@ -119,11 +137,17 @@ mainFrame = do
                         `union` sumE
                    allB = (.) <$> userBehav <*> scoreBehav
 
-                   setE = apply ( const <$> allB ) txtE
+                   setE = appl txtE `union` appl allE
+                        where appl = apply ( const <$> allB )
 
-                   state = {- ($) <$> allB <*> -} accumB initialState
-                                            (union setE $ proceed <$> allE)
+                   state = accumB begin (union setE $ proceed <$> allE)
 
+               reactimate $ fmap (\ s -> do n <- mapM (flip get text) users
+                                            B.writeFile "savegame.mjg"
+                                             . encode
+                                             . (,) n
+                                             $ s { history = [] })
+                          $ apply (const <$> state) saveEvent
                -- | Update visible state of buttons: enable possible
                -- variants, disable others, highlight current selection
                let updateGui   :: Behavior t State
@@ -132,9 +156,16 @@ mainFrame = do
                        let up t f = mapM_ (\ (b,i)
                                   -> sink b [text :== f i <$> beh])
                                   $ zip t [0..]
+                           sun    = mapM_ (\ (b,i)
+                                  -> sink b [ color :== (\ j -> if i == j
+                                               then rgb 230 90 80
+                                               else black) . eastPos <$>  beh])
+                                           $ zip east [0..]
                            has s f i x = if i == f x then s else ""
+                       sun
+                       up east   $ (\ i s -> (!! ((i - eastPos s) `mod` 4))
+                                           [ "東", "南", "西", "北" ])
                        up winner $ has "Won!" winPos
-                       up east   $ has "東" eastPos
                        up total  $ (\ i s -> show $ totals s !! i)
                        up score  $ (\ i s -> showV $ scores s !! i)
                        up sumAll $ (\ i s -> show $ overall s !! i)
@@ -147,12 +178,6 @@ mainFrame = do
 
        network <- compile networkDescription
        actuate network
-
-mapIOtoEvent :: Frameworks t => (a -> IO b) -> Event t a -> Moment t (Event t b)
-mapIOtoEvent f e1 = do
-    (e2, fire2) <- liftIO newAddHandler
-    reactimate $ (\x -> f x >>= fire2) <$> e1
-    fromAddHandler e2
 
 -- | Split a list into groups of N and take only those with exact size of N.
 splitInGroupsOf :: Int -> [a] -> [[a]]
@@ -172,7 +197,7 @@ data State = State { eastPos :: Player
                    , overall :: [Int]
                    , history :: [State]
                    }
-        deriving Show
+        deriving (Show, Generic)
 
 data Setting   = East  Player
                | Score [Int]
@@ -180,7 +205,10 @@ data Setting   = East  Player
                | Wins  Player
                | SumUp
                | Undo
-            deriving (Show, Eq)
+            deriving (Show, Eq, Generic)
+
+instance Serialize Setting
+instance Serialize State
 
 initialState :: State
 initialState = State 0 four [] (-1) four (replicate 12 0) four []
