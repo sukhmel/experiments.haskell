@@ -43,14 +43,13 @@ mainFrame (names, begin) = do
        users  <- mapM (\ n -> textEntry pad [ text := n
                                             , alignment := AlignCentre
                                             , processEnter := True
-                                            , processTab := True
                                             ]) names
        score  <- replicateM 4 $ textEntry pad [ text := ""
                                               , processEnter := True
-                                              , processTab := True
                                               , alignment := AlignRight
                                               ]
        deltas <- mapM (\ a -> textEntry pad [ enabled := False
+                                           , color := black
                                            , alignment := a ])
                $ concat [replicate 12 AlignRight, replicate 4 AlignCentre]
        winner <- replicateM 4 $ button pad [text := ""]
@@ -60,7 +59,7 @@ mainFrame (names, begin) = do
                                               , alignment := AlignCentre]
 
        addNow <- button pad [text := "Sum current and overall"]
-       undo   <- button pad [text := "Undo"]
+       undo   <- button pad [text := "Undo sum"]
        save   <- button pad [text := "Save"]
 
        let box = splitInGroupsOf 4
@@ -151,7 +150,7 @@ mainFrame (names, begin) = do
                                             maybe (const $ return ())
                                                   (B.writeFile) f
                                              . encode . (,) n
-                                             $ s { history = [] })
+                                             $ s )
                           $ apply (const <$> state) saveEvent
                -- | Update visible state of buttons: enable possible
                -- variants, disable others, highlight current selection
@@ -201,7 +200,6 @@ data State = State { eastPos :: Player
                    , totals  :: [Int]
                    , results :: [Int]
                    , overall :: [[Int]]
-                   , history :: [State]
                    }
         deriving (Show, Generic)
 
@@ -217,12 +215,12 @@ instance Serialize Setting
 instance Serialize State
 
 initialState :: State
-initialState = State 0 four [] (-1) four (replicate 12 0) [four] []
+initialState = State 0 four [] (-1) four (replicate 12 0) [four]
     where four = replicate 4 0
 
 proceed :: Setting -> State -> State
 proceed got s = if got /= Undo
-                    then updated { history = s : history s}
+                    then updated
                     else s'
         where s'      = case got of
                              East  p -> s {eastPos = p}
@@ -238,14 +236,13 @@ proceed got s = if got /= Undo
                                                          else (eastPos s + 1)
                                                               `mod` 4
                                           , userSet = userSet s
-                                          , history = history s
                                           , overall = zipWith (+)
                                                        (totals s)
                                                        (head $ overall s)
                                                     : overall s  }
-                             Undo    -> case history s of
-                                             (h:_) -> h
-                                             _     -> s
+                             Undo    -> case overall s of
+                                             (_:h:r) -> s { overall = h:r }
+                                             _       -> s
               updated = s' { results = calc
                            , totals  = total }
               won     = scores s' !! pos

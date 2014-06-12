@@ -39,9 +39,10 @@ mainFrame task = do
                           , text := [n]])         -- currently selected cell.
                      ['1'..'9']
        auto   <- checkBox pad [text := "Auto update possibilities"]
-       solve  <- button   pad [text := "Solve further"]
        upd    <- button   pad [text := "Update now"]
        undo   <- button   pad [text := "Undo"]
+       save   <- button   pad [text := "Save to file"]
+       solve  <- button   pad [text := "Solve further"]
        set pad [ layout := column 15
                            [( grid 15 15
                             . map ( map ( grid 0 0
@@ -53,8 +54,12 @@ mainFrame task = do
                            , expand $ widget auto
                            , hstretch
                            $ row 4
-                             [ expand . stretch $ widget upd
-                             , expand . stretch $ widget undo]
+                           . map ( expand
+                                 . stretch )
+                           $ [ widget upd
+                             , widget undo
+                             , widget save
+                             ]
                            , expand $ widget solve
                            , widget noText]
                     ]
@@ -73,6 +78,7 @@ mainFrame task = do
 
                selectionEvents <- eventify buttons
                choiceEvents    <- eventify cbtns
+               saveEvent       <- event0 save command
                controlEvents   <- do a <- event0 auto command
                                      b <- eventify [ solve
                                                    , undo
@@ -139,6 +145,19 @@ mainFrame task = do
                                  $ zip cbtns [1..]
 
                updateGui state
+               
+               reactimate $ fmap (\ s -> do name <- fileSaveDialog
+                                                    pad True True
+                                                    "Choose a file:"
+                                                    [("Sudoku", ["*.sudoku"])]
+                                                    "" "save.sudoku"
+                                            maybe (const $ return ())
+                                                  (writeFile) name
+                                             . unlines
+                                             . map ( unwords 
+                                                   . map show)
+                                             $ getValuesArray s)
+                          $ apply (const <$> state) saveEvent
 
        network <- compile networkDescription
        actuate network
@@ -184,6 +203,15 @@ data Move = Select (Int, Int)
           | Undo
             deriving Show
 
+getValuesArray :: Game -> [[Int]]
+getValuesArray g = map (map (cut . values . getCell cells)) coord
+    where coord  = [[(x, y) | x <- [0..8]]
+                            | y <- [0..8]]
+          cells  = cel g
+          cut cs = case cs of
+                        [v] -> v
+                        _   -> 0
+            
 begin ::  [Cell Int] -> Game
 begin task = State Nothing Nothing task [] False
 
@@ -216,4 +244,3 @@ stepGame m s = r'
                   Update   -> s {cel = update t (-1,-1) [], hst = t:h}
                   Solve    -> s {cel = getSolution t,       hst = t:h}
                   Undo     -> s {cel = u,                   hst =  h'}
-
