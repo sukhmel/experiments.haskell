@@ -232,7 +232,12 @@ proceed got s = if got /= Undo
                                                        then -1
                                                        else  p}
                              SumUp   -> initialState
-                                          { eastPos = eastPos s
+                                          { eastPos = if winPos s ==
+                                                         eastPos s
+                                                         then  eastPos s
+                                                         else (eastPos s + 1)
+                                                              `mod` 4
+                                          , userSet = userSet s
                                           , history = history s
                                           , overall = zipWith (+)
                                                        (totals s)
