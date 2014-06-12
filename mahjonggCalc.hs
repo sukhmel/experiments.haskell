@@ -142,10 +142,15 @@ mainFrame (names, begin) = do
 
                    state = accumB begin (union setE $ proceed <$> allE)
 
+               -- | Save current game to user chosen file.
                reactimate $ fmap (\ s -> do n <- mapM (flip get text) users
-                                            B.writeFile "savegame.mjg"
-                                             . encode
-                                             . (,) n
+                                            f <- fileSaveDialog pad True True
+                                                "Choose a file to save game to:"
+                                                [("Mahjong savegame",["*.mjg"])]
+                                                "" "savegame.mjg"
+                                            maybe (const $ return ())
+                                                  (B.writeFile) f
+                                             . encode . (,) n
                                              $ s { history = [] })
                           $ apply (const <$> state) saveEvent
                -- | Update visible state of buttons: enable possible
@@ -153,22 +158,23 @@ mainFrame (names, begin) = do
                let updateGui   :: Behavior t State
                                -> Moment t ()
                    updateGui beh = do
-                       let up t f = mapM_ (\ (b,i)
-                                  -> sink b [text :== f i <$> beh])
-                                  $ zip t [0..]
-                           sun    = mapM_ (\ (b,i)
-                                  -> sink b [ color :== (\ j -> if i == j
-                                               then rgb 230 90 80
-                                               else black) . eastPos <$>  beh])
-                                           $ zip east [0..]
-                           has s f i x = if i == f x then s else ""
-                       sun
+                       let d w f p = mapM_ (\ (b,i)
+                                   -> sink b [p :== f i <$> beh])
+                                   $ zip w [0..]
+                           up t f  = d t f text
+                           sunrise = d east (\ i a -> if i == eastPos a
+                                                        then rgb 230 90 80
+                                                        else black) color
+                           plays   = d score ((. userSet) . elem) enabled
+                           has a f i x = if i == f x then a else ""
+                       plays
+                       sunrise
                        up east   $ (\ i s -> (!! ((i - eastPos s) `mod` 4))
                                            [ "東", "南", "西", "北" ])
                        up winner $ has "Won!" winPos
                        up total  $ (\ i s -> show $ totals s !! i)
                        up score  $ (\ i s -> showV $ scores s !! i)
-                       up sumAll $ (\ i s -> show $ overall s !! i)
+                       up sumAll $ (\ i s -> show $ head (overall s) !! i)
                        up (take 12 deltas) $ (\ i s -> show
                                            . (!!i)
                                            . results
@@ -194,7 +200,7 @@ data State = State { eastPos :: Player
                    , winPos  :: Player
                    , totals  :: [Int]
                    , results :: [Int]
-                   , overall :: [Int]
+                   , overall :: [[Int]]
                    , history :: [State]
                    }
         deriving (Show, Generic)
@@ -211,7 +217,7 @@ instance Serialize Setting
 instance Serialize State
 
 initialState :: State
-initialState = State 0 four [] (-1) four (replicate 12 0) four []
+initialState = State 0 four [] (-1) four (replicate 12 0) [four] []
     where four = replicate 4 0
 
 proceed :: Setting -> State -> State
@@ -230,7 +236,8 @@ proceed got s = if got /= Undo
                                           , history = history s
                                           , overall = zipWith (+)
                                                        (totals s)
-                                                       (overall s)}
+                                                       (head $ overall s)
+                                                    : overall s  }
                              Undo    -> case history s of
                                              (h:_) -> h
                                              _     -> s
