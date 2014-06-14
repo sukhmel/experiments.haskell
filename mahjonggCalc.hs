@@ -49,11 +49,12 @@ mainFrame (names, begin) = do
                                               , alignment := AlignRight
                                               ]
        deltas <- mapM (\ a -> textEntry pad [ enabled := False
-                                           , color := black
-                                           , alignment := a ])
+                                            , color := black
+                                            , alignment := a ])
                $ concat [replicate 12 AlignRight, replicate 4 AlignCentre]
        winner <- replicateM 4 $ button pad [text := ""]
        sumAll <- replicateM 4 $ textEntry pad [ text := "0"
+                                              , color := black
                                               , bgcolor := rgb 190 255 110
                                               , enabled := False
                                               , alignment := AlignCentre]
