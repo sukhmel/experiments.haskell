@@ -11,15 +11,23 @@ data Object = Moving { position :: Point
                      , normal   :: Point
                      }
 
+instance Show Object where
+    show m@(Moving{}) = 'M' : '@' : show (position m)
+    show s@(Static{}) = 'S' : '@' : show (position s) ++ "_|_" ++ show (normal s) ++ '&' : show (sprite s)
+    
 data World = World { objects      :: [Object]
                    , acceleration :: Point 
+                   , viscosity    :: Point
+                   , viscosityPow :: Point
                    }
 
 draw :: World -> Picture
 draw w = pictures
        . ((color red . polygon) [a, b, c, a] :)
        . map (\ obj
-             ->  uncurry translate (position obj) (scale 0.5 0.5 $ sprite obj) )
+             ->  pictures . map (uncurry translate $ position obj)
+               $ [ sprite obj
+                 ])
        . objects
        $ w
     where a@(ax, ay) = acceleration w
@@ -57,9 +65,17 @@ advanceStep t w = w { objects = obstacles ++ map process movables }
                                            , velocity = vel'
                                            }
               move m@(Moving{ position = (x,y), velocity = (vx, vy)})
-                            = m{ position = ( x + vx*t,  y + vy*t)
-                               , velocity = (vx + ax*t, vy + ay*t)
-                               }
+                            = let (rx, ry) = resistance m
+                              in  m{ position = ( x + t* vx,        y + t* vy      )
+                                   , velocity = (vx + t*(ax - rx), vy + t*(ay - ry))
+                                   }
+              resistance m = let (vx, vy) = velocity m
+                                 norm     = sqrt $ vx**2 + vy**2
+                                 (cx, cy) = viscosity w
+                                 (px, py) = viscosityPow w
+                                 resist   = ( cx * vx * norm**(px - 1)
+                                            , cy * vy * norm**(py - 1) )
+                             in  resist
               population = objects w
               obstacles  = [ obj | obj@(Static {}) <- population]
               movables   = [ obj | obj@(Moving {}) <- population]
@@ -89,7 +105,33 @@ wallV x f = Static (x, 0)
                    (rotate 90 bigBlueLine)
                    1.1
                    (1, 0)
-          
+
+triang [a, b, c] = let (ax, ay) = a
+                       (bx, by) = b
+                       (cx, cy) = c
+                       (ox, oy) = ((ax + bx)/2, (ay + by)/2)
+                       mv (x,y) = (x - ox, y - oy)
+                       a' = mv a
+                       b' = mv b
+                       c' = mv c
+                       n = (ay - by, bx - ax)
+                       p = (by - cy, cx - bx)
+                       q = (cy - ay, ax - bx)
+                       dot (x, y) (s, t) = x*s + y*t
+                       sameBy m r s = 0 `compare` (r `dot` m)
+                                   == 0 `compare` (s `dot` m)
+                       inner v = sameBy p v a
+                              && sameBy q v b
+                              && sameBy n v c
+                       (nx, ny) = n
+                       norm = sqrt $ nx**2 + ny**2
+                       
+                   in  Static (ox, oy)
+                              (inner . mv)
+                              (color blue $ polygon [ a', b', c', a' ])
+                              0.95
+                              (nx / norm, ny / norm)
+
 main :: IO ()
 main = do ghost <- loadBMP "ghost.bmp"
           play ( InWindow "Boo!"
@@ -99,13 +141,16 @@ main = do ghost <- loadBMP "ghost.bmp"
                30
                ( World [ Moving (0, 0)
                                 (0, 0)
-                                ghost
-                       , wallH (-200) (>)
-                       , wallH ( 200) (<)
-                       , wallV (-200) (>)
-                       , wallV ( 200) (<)
+                                (scale 0.5 0.5 ghost)
+                       , triang [ (-200, -200), ( 200, -200), (   0, -250) ]
+                       , triang [ ( 200, -200), ( 200,  200), ( 250,    0) ]
+                       , triang [ ( 200,  200), (-200,  200), (   0,  250) ]
+                       , triang [ (-200,  200), (-200, -200), (-250,    0) ]
                        ]
                        (0, 0)
+                       (0.1, 0.1)
+                       (1, 1) -- Neutonian environment: viscosity force depends
+                              -- on first power of speed.
                )
                draw
                handleKey
