@@ -109,25 +109,30 @@ wallV x f = Static (x, 0)
 triang [a, b, c] = let (ax, ay) = a
                        (bx, by) = b
                        (cx, cy) = c
-                       (ox, oy) = ((ax + bx)/2, (ay + by)/2)
-                       mv (x,y) = (x - ox, y - oy)
+                       o@(ox, oy) = ((ax + bx)/2, (ay + by)/2)
+                       mv = (`sub` o)
                        a' = mv a
                        b' = mv b
                        c' = mv c
                        n = (ay - by, bx - ax)
                        p = (by - cy, cx - bx)
-                       q = (cy - ay, ax - bx)
+                       q = (cy - ay, ax - cx)
                        dot (x, y) (s, t) = x*s + y*t
-                       sameBy m r s = 0 `compare` (r `dot` m)
-                                   == 0 `compare` (s `dot` m)
-                       inner v = sameBy p v a
-                              && sameBy q v b
-                              && sameBy n v c
+                       sub (x, y) (s, t) = (x - s, y - t)
+                       same normVector
+                            linePoint
+                            referencePoint
+                            testedPoint = check testedPoint
+                                       == check referencePoint
+                                    where check = compare 0 . dot normVector . (`sub` linePoint)
+                       inner v = same q a b v
+                              && same n b c v
+                              && same p c a v
                        (nx, ny) = n
                        norm = sqrt $ nx**2 + ny**2
                        
                    in  Static (ox, oy)
-                              (inner . mv)
+                              inner
                               (color blue $ polygon [ a', b', c', a' ])
                               0.95
                               (nx / norm, ny / norm)
@@ -142,10 +147,10 @@ main = do ghost <- loadBMP "ghost.bmp"
                ( World [ Moving (0, 0)
                                 (0, 0)
                                 (scale 0.5 0.5 ghost)
-                       , triang [ (-200, -200), ( 200, -200), (   0, -250) ]
-                       , triang [ ( 200, -200), ( 200,  200), ( 250,    0) ]
-                       , triang [ ( 200,  200), (-200,  200), (   0,  250) ]
-                       , triang [ (-200,  200), (-200, -200), (-250,    0) ]
+                       , triang [ (-201, -200), ( 201, -200), (   0, -250) ]
+                       , triang [ ( 200, -201), ( 200,  201), ( 250,    0) ]
+                       , triang [ ( 200,  200), (-201,  200), (   0,  250) ]
+                       , triang [ (-200,  201), (-200, -201), (-250,    0) ]
                        ]
                        (0, 0)
                        (0.1, 0.1)
