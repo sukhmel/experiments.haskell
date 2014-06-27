@@ -1,3 +1,4 @@
+import Data.List
 import Graphics.Gloss.Interface.Pure.Game
 
 data Object = Moving { position :: Point
@@ -137,6 +138,14 @@ triang [a, b, c] = let (ax, ay) = a
                               0.95
                               (nx / norm, ny / norm)
 
+repulsePoly as = map (triang . (++ [centre]) . take 2)
+               . filter (not . null . drop 1)
+               . tails
+               $ as 
+    where centre = average as (0,0) 0
+          average ((x,y):rest) (xs, ys) n = average rest (xs + x, ys + y) (n + 1)
+          average [] (x, y) n = (x/n, y/n)
+
 main :: IO ()
 main = do ghost <- loadBMP "ghost.bmp"
           play ( InWindow "Boo!"
@@ -144,16 +153,21 @@ main = do ghost <- loadBMP "ghost.bmp"
                           (100, 100) )
                ( greyN 0.5 )
                30
-               ( World [ Moving (0, 0)
-                                (0, 0)
-                                (scale 0.5 0.5 ghost)
-                       , triang [ (-201, -200), ( 201, -200), (   0, -250) ]
-                       , triang [ ( 200, -201), ( 200,  201), ( 250,    0) ]
-                       , triang [ ( 200,  200), (-201,  200), (   0,  250) ]
-                       , triang [ (-200,  201), (-200, -201), (-250,    0) ]
-                       ]
+               ( World ( [ Moving (20, 20)
+                                  (-10, -20)
+                                  (scale 0.5 0.5 ghost)
+                         , triang [ (-201, -200), ( 201, -200), (   0, -250) ]
+                         , triang [ ( 200, -201), ( 200,  201), ( 250,    0) ]
+                         , triang [ ( 200,  200), (-201,  200), (   0,  250) ]
+                         , triang [ (-200,  201), (-200, -201), (-250,    0) ]
+                         ]
+                      ++ repulsePoly [ (  0,  50), ( 10,  10)
+                                     , ( 50,   0), ( 10, -10)
+                                     , (  0, -50), (-10, -10)
+                                     , (-50,   0), (-10,  10)
+                                     , (  0,  50)] )
                        (0, 0)
-                       (0.1, 0.1)
+                       (0.0, 0.0)
                        (1, 1) -- Neutonian environment: viscosity force depends
                               -- on first power of speed.
                )
